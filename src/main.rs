@@ -65,6 +65,11 @@ impl Emulator {
         }
         return ret;
     }
+
+    fn get_sign_code32(&self, index: i32) -> i32 {
+        self.get_code32(index) as i32
+    }
+
     fn run_instructions(&mut self) {
         while self.eip < MEMORY_SIZE as u32 {
             self.exec_instruction();
@@ -81,6 +86,7 @@ impl Emulator {
         println!("EIP = {:0X}, Code = {:02X}", self.eip, code);
         match code {
             0xB8...0xBF => self.mov_r32_imm32(),
+            0xE9 => self.near_jump(),
             0xEB => self.short_jump(),
             _ => {
                 eprintln!("Not Implemented: {:0x}", code);
@@ -107,6 +113,18 @@ impl Emulator {
             }
         }
     }
+
+    fn near_jump(&mut self) {
+        let diff = self.get_sign_code32(1) + 5;
+        match diff > 0 {
+            true => {
+                self.eip += diff as u32;
+            }
+            false => {
+                self.eip -= diff.abs() as u32;
+            }
+        }
+    }
 }
 
 fn main() {
@@ -116,10 +134,10 @@ fn main() {
         ::std::process::exit(1);
     }
 
-    let mut emu = Emulator::new(MEMORY_SIZE, 0x0000, 0x7c00);
+    let mut emu = Emulator::new(MEMORY_SIZE, 0x7c00, 0x7c00);
     if let Ok(f) = ::std::fs::File::open(&args[1]) {
         let mut br = BufReader::new(f);
-        br.read_exact(&mut emu.memory[0..513]);
+        br.read_exact(&mut emu.memory[0x7c00..(0x7c00 + 0x201)]);
     } else {
         eprintln!("ファイルが開けません: {}", &args[1]);
         ::std::process::exit(1);
