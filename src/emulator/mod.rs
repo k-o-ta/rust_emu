@@ -88,6 +88,19 @@ impl EmulatorFunction for Emulator {
     fn set_register32(&mut self, index: usize, value: u32) {
         self.registers[index] = value;
     }
+
+    fn push32(&mut self, value: u32) {
+        let address = self.get_register32(Register::ESP as usize) - 4;
+        self.set_register32(Register::ESP as usize, address);
+        self.set_memory32(address as usize, value);
+    }
+
+    fn pop32(&mut self) -> u32 {
+        let address = self.get_register32(Register::ESP as usize);
+        let ret = self.get_memory32(address as usize);
+        self.set_register32(Register::ESP as usize, address + 4);
+        ret
+    }
 }
 
 impl Instruction for Emulator {
@@ -106,12 +119,19 @@ impl Instruction for Emulator {
         // 現在のプログラムカウンタと実行されるバイナリを出力する
         println!("EIP = {:0X}, Code = {:02X}", self.eip, code);
         match code {
+            0x50..=0x57 => self.push_r32(),
+            0x58..=0x5f => self.pop_r32(),
             0x01 => self.add_rm32_r32(),
+            0x68 => self.push_imm32(),
+            0x6A => self.push_imm8(),
             0x83 => self.code_83(),
             0x89 => self.mov_rm32_r32(),
             0x8B => self.mov_r32_rm32(),
-            0xB8...0xBF => self.mov_r32_imm32(),
+            0xB8..=0xBF => self.mov_r32_imm32(),
+            0xC3 => self.ret(),
             0xC7 => self.move_rm32_imm32(),
+            0xC9 => self.leave(),
+            0xE8 => self.call_rel32(),
             0xE9 => self.near_jump(),
             0xEB => self.short_jump(),
             0xFF => self.code_ff(),
@@ -159,6 +179,20 @@ impl Instruction for Emulator {
         self.set_rm32(&modrm, rm32 + r32);
     }
 
+    fn add_rm32_imm8(&mut self, modrm: &ModRM) {
+        let rm32 = self.get_rm32(modrm);
+        let imm8 = self.get_sign_code8(0) as i32;
+        self.eip += 1;
+
+        let sum: u32;
+        if imm8 > 0 {
+            sum = rm32 + imm8 as u32;
+        } else {
+            sum = rm32 - (imm8.abs() as u32);
+        }
+        self.set_rm32(modrm, sum);
+    }
+
     fn sub_rm32_imm8(&mut self, modrm: &ModRM) {
         let rm32 = self.get_rm32(&modrm);
         let imm8 = self.get_sign_code8(0) as i32;
@@ -175,6 +209,7 @@ impl Instruction for Emulator {
         self.eip += 1;
         let modrm = self.parse_modrm();
         match modrm.get_opecode() {
+            0 => self.add_rm32_imm8(&modrm),
             5 => self.sub_rm32_imm8(&modrm),
             opecode @ _ => panic!("not implemented: 83 /{}", opecode),
         }
@@ -191,6 +226,57 @@ impl Instruction for Emulator {
             0 => self.inc_rm32(&modrm),
             opecode @ _ => panic!("not implemented: FF /{}", opecode),
         }
+    }
+
+    fn push_r32(&mut self) {
+        let push_r32_code = 0x50;
+        let reg = self.get_code8(0) - push_r32_code;
+        let value = self.get_register32(reg as usize);
+        self.push32(value);
+        self.eip += 1;
+    }
+
+    fn push_imm8(&mut self) {
+        let value = self.get_code8(1);
+        self.push32(value as u32);
+        self.eip += 2;
+    }
+
+    fn push_imm32(&mut self) {
+        let value = self.get_code32(1);
+        self.push32(value);
+        self.eip += 5;
+    }
+
+    fn pop_r32(&mut self) {
+        let pop_r32_code = 0x58;
+        let reg = self.get_code8(0) - pop_r32_code;
+        let value = self.pop32();
+        self.set_register32(reg as usize, value);
+        self.eip += 1;
+    }
+
+    fn call_rel32(&mut self) {
+        let diff = self.get_sign_code32(1);
+        let eip = self.eip;
+        self.push32(eip + 5);
+        if diff + 5 > 0 {
+            self.eip += (diff + 5) as u32;
+        } else {
+            self.eip -= (diff + 5).abs() as u32;
+        }
+    }
+
+    fn ret(&mut self) {
+        self.eip = self.pop32();
+    }
+
+    fn leave(&mut self) {
+        let ebp = self.get_register32(Register::EBP as usize);
+        self.set_register32(Register::ESP as usize, ebp);
+        let value = self.pop32();
+        self.set_register32(Register::EBP as usize, value);
+        self.eip += 1;
     }
 
     fn short_jump(&mut self) {
@@ -276,7 +362,14 @@ impl ModRMFunction for Emulator {
             },
             1 => match modrm.rm {
                 4 => panic!("not implemented ModRM mode = 1, rm = 4"),
-                _ => self.get_register32(modrm.rm as usize) + modrm.get_disp8() as u32,
+                _ => {
+                    let disp = modrm.get_disp8();
+                    if disp > 0 {
+                        self.get_register32(modrm.rm as usize) + modrm.get_disp8() as u32
+                    } else {
+                        self.get_register32(modrm.rm as usize) - modrm.get_disp8().abs() as u32
+                    }
+                }
             },
             2 => match modrm.rm {
                 4 => panic!("not implemented ModRM mode = 2, rm = 4"),

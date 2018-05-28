@@ -9,4 +9,6 @@ pub trait EmulatorFunction {
     fn set_memory32(&mut self, address: usize, value: u32);
     fn get_register32(&self, usize) -> u32;
     fn set_register32(&mut self, index: usize, value: u32);
+    fn push32(&mut self, u32);
+    fn pop32(&mut self) -> u32;
 }

@@ -9,10 +9,18 @@ pub trait Instruction {
     fn mov_rm32_r32(&mut self);
     fn mov_r32_rm32(&mut self);
     fn add_rm32_r32(&mut self);
+    fn add_rm32_imm8(&mut self, &ModRM);
     fn sub_rm32_imm8(&mut self, &ModRM);
     fn code_83(&mut self);
     fn inc_rm32(&mut self, &ModRM);
     fn code_ff(&mut self);
+    fn push_r32(&mut self);
+    fn pop_r32(&mut self);
+    fn call_rel32(&mut self);
+    fn ret(&mut self);
+    fn leave(&mut self);
+    fn push_imm8(&mut self);
+    fn push_imm32(&mut self);
     fn short_jump(&mut self);
     fn near_jump(&mut self);
 }
