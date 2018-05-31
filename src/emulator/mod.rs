@@ -37,6 +37,10 @@ pub struct Emulator {
 }
 
 impl EmulatorFunction for Emulator {
+    const CARRY_FLAG: u32 = 1;
+    const ZERO_FLAG: u32 = (1 << 6);
+    const SIGN_FLAG: u32 = (1 << 7);
+    const OVERFLOW_FLAG: u32 = (1 << 11);
     fn get_code8(&self, index: i32) -> u8 {
         self.memory[(self.eip + index as u32) as usize]
     }
@@ -101,6 +105,22 @@ impl EmulatorFunction for Emulator {
         self.set_register32(Register::ESP as usize, address + 4);
         ret
     }
+
+    fn is_carry(&self) -> bool {
+        (self.eflags & Self::CARRY_FLAG) != 0
+    }
+    fn is_zero(&self) -> bool {
+        (self.eflags & Self::ZERO_FLAG) != 0
+    }
+
+    fn is_sign(&self) -> bool {
+        (self.eflags & Self::SIGN_FLAG) != 0
+    }
+
+    fn is_overflow(&self) -> bool {
+        (self.eflags & Self::OVERFLOW_FLAG) != 0
+    }
+    fn update_eflags_sub(&mut self, v1: u32, v2: u32, result: u64) {}
 }
 
 impl Instruction for Emulator {
@@ -119,11 +139,22 @@ impl Instruction for Emulator {
         // 現在のプログラムカウンタと実行されるバイナリを出力する
         println!("EIP = {:0X}, Code = {:02X}", self.eip, code);
         match code {
+            0x01 => self.add_rm32_r32(),
+            0x3B => self.cmp_r32_rm32(),
             0x50..=0x57 => self.push_r32(),
             0x58..=0x5f => self.pop_r32(),
-            0x01 => self.add_rm32_r32(),
             0x68 => self.push_imm32(),
             0x6A => self.push_imm8(),
+            0x70 => self.jo(),
+            0x71 => self.jno(),
+            0x72 => self.jc(),
+            0x73 => self.jnc(),
+            0x74 => self.jz(),
+            0x75 => self.jnz(),
+            0x78 => self.js(),
+            0x79 => self.jns(),
+            0x7C => self.jl(),
+            0x7E => self.jle(),
             0x83 => self.code_83(),
             0x89 => self.mov_rm32_r32(),
             0x8B => self.mov_r32_rm32(),
@@ -198,11 +229,26 @@ impl Instruction for Emulator {
         let imm8 = self.get_sign_code8(0) as i32;
         self.eip += 1;
         // imm8の正負で条件分岐
-        if imm8 >= 0 {
-            self.set_rm32(&modrm, rm32 - (imm8 as u32));
-        } else {
-            self.set_rm32(&modrm, rm32 + (imm8.abs() as u32));
-        }
+        let result = if imm8 >= 0 { rm32 - (imm8 as u32) } else { rm32 + (imm8.abs() as u32) };
+        self.set_rm32(&modrm, result);
+        self.update_eflags_sub(rm32, imm8 as u32, result as u64);
+    }
+
+    fn cmp_rm32_imm8(&mut self, modrm: &ModRM) {
+        let rm32 = self.get_rm32(modrm);
+        let imm8 = self.get_sign_code8(0) as i32;
+        self.eip += 1;
+        let result = if imm8 >= 0 { rm32 - (imm8 as u32) } else { rm32 + (imm8.abs() as u32) };
+        self.update_eflags_sub(rm32, imm8 as u32, result as u64);
+    }
+
+    fn cmp_r32_rm32(&mut self) {
+        self.eip += 1;
+        let modrm = self.parse_modrm();
+        let r32 = self.get_r32(&modrm);
+        let rm32 = self.get_rm32(&modrm);
+        let result: u64 = r32 as u64 - rm32 as u64;
+        self.update_eflags_sub(r32, rm32, result);
     }
 
     fn code_83(&mut self) {
@@ -211,6 +257,7 @@ impl Instruction for Emulator {
         match modrm.get_opecode() {
             0 => self.add_rm32_imm8(&modrm),
             5 => self.sub_rm32_imm8(&modrm),
+            7 => self.cmp_rm32_imm8(&modrm),
             opecode @ _ => panic!("not implemented: 83 /{}", opecode),
         }
     }
@@ -300,6 +347,104 @@ impl Instruction for Emulator {
             false => {
                 self.eip -= diff.abs() as u32;
             }
+        }
+    }
+
+    fn jo(&mut self) {
+        let diff = if self.is_overflow() { self.get_sign_code8(1) } else { 0 };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jno(&mut self) {
+        let diff = if self.is_overflow() { 0 } else { self.get_sign_code8(1) };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jc(&mut self) {
+        let diff = if self.is_carry() { self.get_sign_code8(1) } else { 0 };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jnc(&mut self) {
+        let diff = if self.is_carry() { 0 } else { self.get_sign_code8(1) };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jz(&mut self) {
+        let diff = if self.is_zero() { self.get_sign_code8(1) } else { 0 };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jnz(&mut self) {
+        let diff = if self.is_zero() { 0 } else { self.get_sign_code8(1) };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn js(&mut self) {
+        let diff = if self.is_sign() { self.get_sign_code8(1) } else { 0 };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jns(&mut self) {
+        let diff = if self.is_sign() { 0 } else { self.get_sign_code8(1) };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jl(&mut self) {
+        let diff = if self.is_sign() != self.is_overflow() {
+            self.get_sign_code8(1)
+        } else {
+            0
+        };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
+        }
+    }
+
+    fn jle(&mut self) {
+        let diff = if (self.is_zero() || (self.is_sign() != self.is_overflow())) {
+            self.get_sign_code8(1)
+        } else {
+            0
+        };
+        if diff + 2 > 0 {
+            self.eip += (diff + 2) as u32;
+        } else {
+            self.eip -= (diff + 2).abs() as u32;
         }
     }
 }
