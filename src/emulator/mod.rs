@@ -269,7 +269,7 @@ impl Instruction for Emulator {
     fn code_ff(&mut self) {
         self.eip += 1;
         let modrm = self.parse_modrm();
-        match (modrm.get_opecode()) {
+        match modrm.get_opecode() {
             0 => self.inc_rm32(&modrm),
             opecode @ _ => panic!("not implemented: FF /{}", opecode),
         }
@@ -436,7 +436,7 @@ impl Instruction for Emulator {
     }
 
     fn jle(&mut self) {
-        let diff = if (self.is_zero() || (self.is_sign() != self.is_overflow())) {
+        let diff = if self.is_zero() || (self.is_sign() != self.is_overflow()) {
             self.get_sign_code8(1)
         } else {
             0
@@ -491,7 +491,7 @@ impl ModRMFunction for Emulator {
         if (modrm.mode == 0 && modrm.rm == 5) || modrm.mode == 2 {
             modrm.disp.disp32 = self.get_sign_code32(0) as u32;
             self.eip += 4;
-        } else if (modrm.mode == 1) {
+        } else if modrm.mode == 1 {
             modrm.disp.disp8 = self.get_sign_code8(0);
             self.eip += 1;
         }

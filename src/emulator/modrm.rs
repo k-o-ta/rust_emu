@@ -32,7 +32,6 @@ impl ModRM {
         unsafe {
             match self.reg {
                 Reg { opecode } => opecode,
-                Reg { reg_index } => panic!("not data was assigned to reg_index"),
             }
         }
     }
@@ -40,7 +39,6 @@ impl ModRM {
         unsafe {
             match self.reg {
                 Reg { reg_index } => reg_index,
-                Reg { opecode } => panic!("not data was assigned to opcode"),
             }
         }
     }
@@ -48,7 +46,6 @@ impl ModRM {
         unsafe {
             match self.disp {
                 Disp { disp8 } => disp8,
-                Disp { disp32 } => panic!("not data was assigned to disp32"),
             }
         }
     }
@@ -57,7 +54,6 @@ impl ModRM {
         unsafe {
             match self.disp {
                 Disp { disp32 } => disp32,
-                Disp { disp8 } => panic!("not data was assigned to disp8"),
             }
         }
     }
