@@ -120,7 +120,49 @@ impl EmulatorFunction for Emulator {
     fn is_overflow(&self) -> bool {
         (self.eflags & Self::OVERFLOW_FLAG) != 0
     }
-    fn update_eflags_sub(&mut self, v1: u32, v2: u32, result: u64) {}
+
+    fn set_carry(&mut self, is_carry: bool) {
+        if (is_carry) {
+            self.eflags |= Self::CARRY_FLAG;
+        } else {
+            self.eflags &= !Self::CARRY_FLAG;
+        }
+    }
+
+    fn set_sign(&mut self, is_sign: bool) {
+        if (is_sign) {
+            self.eflags |= Self::SIGN_FLAG;
+        } else {
+            self.eflags &= !Self::SIGN_FLAG;
+        }
+    }
+
+    fn set_zero(&mut self, is_zero: bool) {
+        if (is_zero) {
+            self.eflags |= Self::ZERO_FLAG;
+        } else {
+            self.eflags &= !Self::ZERO_FLAG;
+        }
+    }
+
+    fn set_overflow(&mut self, is_overflow: bool) {
+        if (is_overflow) {
+            self.eflags |= Self::OVERFLOW_FLAG;
+        } else {
+            self.eflags &= !Self::OVERFLOW_FLAG;
+        }
+    }
+
+    fn update_eflags_sub(&mut self, v1: u32, v2: u32, result: u64) {
+        let sign1 = (v1 >> 31) == 1;
+        let sign2 = (v2 >> 31) == 1;
+        let signr = ((result >> 31) & 1) == 1;
+
+        self.set_carry((result >> 32) != 0);
+        self.set_zero(result == 0);
+        self.set_sign(signr);
+        self.set_overflow(sign1 != sign2 && sign1 != signr);
+    }
 }
 
 impl Instruction for Emulator {

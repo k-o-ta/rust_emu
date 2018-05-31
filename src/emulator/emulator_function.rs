@@ -19,5 +19,9 @@ pub trait EmulatorFunction {
     fn is_zero(&self) -> bool;
     fn is_sign(&self) -> bool;
     fn is_overflow(&self) -> bool;
+    fn set_carry(&mut self, bool);
+    fn set_sign(&mut self, bool);
+    fn set_zero(&mut self, bool);
+    fn set_overflow(&mut self, bool);
     fn update_eflags_sub(&mut self, v1: u32, v2: u32, result: u64);
 }
