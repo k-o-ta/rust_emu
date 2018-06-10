@@ -1,8 +1,8 @@
 use emulator::modrm::ModRM;
 
 pub trait Instruction {
-    fn run_instructions(&mut self);
-    fn exec_instruction(&mut self);
+    fn run_instructions(&mut self, bool);
+    fn exec_instruction(&mut self, bool);
 
     fn mov_r32_imm32(&mut self);
     fn move_rm32_imm32(&mut self);
@@ -25,6 +25,8 @@ pub trait Instruction {
     fn push_imm32(&mut self);
     fn short_jump(&mut self);
     fn near_jump(&mut self);
+    fn in_al_dx(&mut self);
+    fn out_dx_al(&mut self);
     fn jo(&mut self);
     fn jno(&mut self);
     fn jc(&mut self);

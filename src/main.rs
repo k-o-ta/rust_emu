@@ -4,7 +4,12 @@ use rust_emu::emulator::Emulator;
 use rust_emu::emulator::instruction::Instruction;
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
+    args.dedup();
+
+    let quiet = args.iter().find(|&arg| *arg == "-q".to_string()).is_some();
+    args.retain(|ref arg| **arg != "-q".to_string());
+
     if args.len() != 2 {
         eprintln!("usage: px86 filename");
         ::std::process::exit(1);
@@ -17,6 +22,6 @@ fn main() {
         eprintln!("ファイルが開けません: {}", &args[1]);
         ::std::process::exit(1);
     }
-    emu.run_instructions();
+    emu.run_instructions(quiet);
     emu.dump_registers();
 }

@@ -1,5 +1,6 @@
 mod emulator_function;
 pub mod instruction;
+pub mod io;
 pub mod modrm;
 
 use std::fs::File;
@@ -7,12 +8,14 @@ use std::io::{BufReader, Read};
 
 use self::emulator_function::EmulatorFunction;
 use self::instruction::Instruction;
+use self::io::Io;
 use self::modrm::{Disp, Function as ModRMFunction, ModRM};
 
 // メモリは1MB
 pub const MEMORY_SIZE: usize = 1024 * 1024;
 const REGISTERS_NAME: [&str; 8] = ["EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI"];
 
+#[allow(dead_code)]
 enum Register {
     EAX,
     ECX,
@@ -23,6 +26,18 @@ enum Register {
     ESI,
     EDI,
     RegistersCount,
+}
+
+#[allow(dead_code)]
+enum Register8 {
+    AL,
+    CL,
+    DL,
+    BL,
+    AH,
+    CH,
+    DH,
+    BH,
 }
 
 pub struct Emulator {
@@ -85,8 +100,26 @@ impl EmulatorFunction for Emulator {
         }
     }
 
+    fn get_register8(&self, index: usize) -> u8 {
+        if (index < 4) {
+            (self.registers[index] & 0xff) as u8
+        } else {
+            ((self.registers[index - 4] >> 8) & 0xff) as u8
+        }
+    }
+
     fn get_register32(&self, index: usize) -> u32 {
         self.registers[index]
+    }
+
+    fn set_register8(&mut self, index: usize, value: u8) {
+        if (index < 4) {
+            let r = self.registers[index] & 0xffffff00;
+            self.registers[index] = r | (value as u32);
+        } else {
+            let r = self.registers[index - 4] & 0xffff00ff;
+            self.registers[index - 4] = r | ((value as u32) << 8);
+        }
     }
 
     fn set_register32(&mut self, index: usize, value: u32) {
@@ -166,9 +199,9 @@ impl EmulatorFunction for Emulator {
 }
 
 impl Instruction for Emulator {
-    fn run_instructions(&mut self) {
+    fn run_instructions(&mut self, quiet: bool) {
         while self.eip < MEMORY_SIZE as u32 {
-            self.exec_instruction();
+            self.exec_instruction(quiet);
             if self.eip == 0x00 {
                 println!("end of program.");
                 break;
@@ -176,10 +209,12 @@ impl Instruction for Emulator {
         }
     }
 
-    fn exec_instruction(&mut self) {
+    fn exec_instruction(&mut self, quiet: bool) {
         let code = self.get_code8(0);
         // 現在のプログラムカウンタと実行されるバイナリを出力する
-        println!("EIP = {:0X}, Code = {:02X}", self.eip, code);
+        if (!quiet) {
+            println!("EIP = {:0X}, Code = {:02X}", self.eip, code);
+        }
         match code {
             0x01 => self.add_rm32_r32(),
             0x3B => self.cmp_r32_rm32(),
@@ -207,6 +242,8 @@ impl Instruction for Emulator {
             0xE8 => self.call_rel32(),
             0xE9 => self.near_jump(),
             0xEB => self.short_jump(),
+            0xEC => self.in_al_dx(),
+            0xEE => self.out_dx_al(),
             0xFF => self.code_ff(),
             _ => {
                 eprintln!("Not Implemented: {:0x}", code);
@@ -390,6 +427,20 @@ impl Instruction for Emulator {
                 self.eip -= diff.abs() as u32;
             }
         }
+    }
+
+    fn in_al_dx(&mut self) {
+        let address = self.get_register32(Register::EDX as usize) & 0xffff;
+        let value = Self::io_in8(address as u16);
+        self.set_register8(Register8::AL as usize, value);
+        self.eip += 1;
+    }
+
+    fn out_dx_al(&mut self) {
+        let address = self.get_register32(Register::EDX as usize) & 0xffff;
+        let value = self.get_register8(Register8::AL as usize);
+        Self::io_out8(address as u16, value);
+        self.eip += 1;
     }
 
     fn jo(&mut self) {
@@ -594,3 +645,5 @@ impl ModRMFunction for Emulator {
         }
     }
 }
+
+impl Io for Emulator {}
