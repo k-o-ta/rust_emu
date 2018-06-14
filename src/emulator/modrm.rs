@@ -62,8 +62,12 @@ impl ModRM {
 pub trait Function {
     fn parse_modrm(&mut self) -> ModRM;
     fn calc_memory_address(&self, &ModRM) -> u32;
+    fn get_r8(&mut self, modrm: &ModRM) -> u8;
     fn get_r32(&mut self, modrm: &ModRM) -> u32;
+    fn get_rm8(&mut self, modrm: &ModRM) -> u8;
     fn get_rm32(&mut self, modrm: &ModRM) -> u32;
+    fn set_r8(&mut self, modrm: &ModRM, value: u8);
     fn set_r32(&mut self, modrm: &ModRM, value: u32);
+    fn set_rm8(&mut self, modrm: &ModRM, value: u8);
     fn set_rm32(&mut self, modrm: &ModRM, value: u32);
 }

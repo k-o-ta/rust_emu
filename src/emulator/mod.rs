@@ -101,7 +101,7 @@ impl EmulatorFunction for Emulator {
     }
 
     fn get_register8(&self, index: usize) -> u8 {
-        if (index < 4) {
+        if index < 4 {
             (self.registers[index] & 0xff) as u8
         } else {
             ((self.registers[index - 4] >> 8) & 0xff) as u8
@@ -113,7 +113,7 @@ impl EmulatorFunction for Emulator {
     }
 
     fn set_register8(&mut self, index: usize, value: u8) {
-        if (index < 4) {
+        if index < 4 {
             let r = self.registers[index] & 0xffffff00;
             self.registers[index] = r | (value as u32);
         } else {
@@ -155,7 +155,7 @@ impl EmulatorFunction for Emulator {
     }
 
     fn set_carry(&mut self, is_carry: bool) {
-        if (is_carry) {
+        if is_carry {
             self.eflags |= Self::CARRY_FLAG;
         } else {
             self.eflags &= !Self::CARRY_FLAG;
@@ -163,7 +163,7 @@ impl EmulatorFunction for Emulator {
     }
 
     fn set_sign(&mut self, is_sign: bool) {
-        if (is_sign) {
+        if is_sign {
             self.eflags |= Self::SIGN_FLAG;
         } else {
             self.eflags &= !Self::SIGN_FLAG;
@@ -171,7 +171,7 @@ impl EmulatorFunction for Emulator {
     }
 
     fn set_zero(&mut self, is_zero: bool) {
-        if (is_zero) {
+        if is_zero {
             self.eflags |= Self::ZERO_FLAG;
         } else {
             self.eflags &= !Self::ZERO_FLAG;
@@ -179,7 +179,7 @@ impl EmulatorFunction for Emulator {
     }
 
     fn set_overflow(&mut self, is_overflow: bool) {
-        if (is_overflow) {
+        if is_overflow {
             self.eflags |= Self::OVERFLOW_FLAG;
         } else {
             self.eflags &= !Self::OVERFLOW_FLAG;
@@ -212,12 +212,15 @@ impl Instruction for Emulator {
     fn exec_instruction(&mut self, quiet: bool) {
         let code = self.get_code8(0);
         // 現在のプログラムカウンタと実行されるバイナリを出力する
-        if (!quiet) {
+        if !quiet {
             println!("EIP = {:0X}, Code = {:02X}", self.eip, code);
         }
         match code {
             0x01 => self.add_rm32_r32(),
             0x3B => self.cmp_r32_rm32(),
+            0x3C => self.cmp_al_imm8(),
+            0x3D => self.cmp_eax_imm32(),
+            0x40..=0x47 => self.inc_r32(),
             0x50..=0x57 => self.push_r32(),
             0x58..=0x5f => self.pop_r32(),
             0x68 => self.push_imm32(),
@@ -233,8 +236,11 @@ impl Instruction for Emulator {
             0x7C => self.jl(),
             0x7E => self.jle(),
             0x83 => self.code_83(),
+            0x88 => self.mov_rm8_r8(),
             0x89 => self.mov_rm32_r32(),
+            0x8A => self.mov_r8_rm8(),
             0x8B => self.mov_r32_rm32(),
+            0xB0..=0xB7 => self.mov_r8_imm8(),
             0xB8..=0xBF => self.mov_r32_imm32(),
             0xC3 => self.ret(),
             0xC7 => self.move_rm32_imm32(),
@@ -274,11 +280,32 @@ impl Instruction for Emulator {
         self.set_rm32(&modrm, r32);
     }
 
+    fn inc_r32(&mut self) {
+        let reg = self.get_code8(0) - 0x40;
+        let value = self.get_register32(reg as usize) + 1;
+        self.set_register32(reg as usize, value);
+        self.eip += 1;
+    }
+
+    fn mov_r8_rm8(&mut self) {
+        self.eip += 1;
+        let modrm = self.parse_modrm();
+        let rm8 = self.get_rm8(&modrm);
+        self.set_r8(&modrm, rm8);
+    }
+
     fn mov_r32_rm32(&mut self) {
         self.eip += 1;
         let modrm = self.parse_modrm();
         let rm32 = self.get_rm32(&modrm);
         self.set_r32(&modrm, rm32);
+    }
+
+    fn mov_r8_imm8(&mut self) {
+        let reg = self.get_code8(0) - 0xB0;
+        let value = self.get_code8(1);
+        self.set_register8(reg as usize, value);
+        self.eip += 2;
     }
 
     fn add_rm32_r32(&mut self) {
@@ -326,8 +353,32 @@ impl Instruction for Emulator {
         let modrm = self.parse_modrm();
         let r32 = self.get_r32(&modrm);
         let rm32 = self.get_rm32(&modrm);
-        let result: u64 = r32 as u64 - rm32 as u64;
+        let result = if r32 > rm32 {
+            r32 as u64 - rm32 as u64
+        } else {
+            (r32 as i64 - rm32 as i64).abs() as u64
+        };
         self.update_eflags_sub(r32, rm32, result);
+    }
+
+    fn cmp_al_imm8(&mut self) {
+        let value = self.get_code8(1);
+        let al = self.get_register8(Register8::AL as usize);
+        let result = if al > value {
+            al as u64 - value as u64
+        } else {
+            (al as i32 - value as i32).abs() as u64
+        };
+        self.update_eflags_sub(al as u32, value as u32, result);
+        self.eip += 2;
+    }
+
+    fn cmp_eax_imm32(&mut self) {
+        let value = self.get_code32(1);
+        let eax = self.get_register32(Register::EAX as usize);
+        let result = eax as u64 - value as u64;
+        self.update_eflags_sub(eax, value, result);
+        self.eip += 5
     }
 
     fn code_83(&mut self) {
@@ -340,6 +391,14 @@ impl Instruction for Emulator {
             opecode @ _ => panic!("not implemented: 83 /{}", opecode),
         }
     }
+
+    fn mov_rm8_r8(&mut self) {
+        self.eip += 1;
+        let modrm = self.parse_modrm();
+        let r8 = self.get_r8(&modrm);
+        self.set_rm8(&modrm, r8);
+    }
+
     fn inc_rm32(&mut self, modrm: &ModRM) {
         let value = self.get_rm32(&modrm);
         self.set_rm32(&modrm, value + 1);
@@ -619,8 +678,21 @@ impl ModRMFunction for Emulator {
         }
     }
 
+    fn get_r8(&mut self, modrm: &ModRM) -> u8 {
+        return self.get_register8(modrm.get_reg_index() as usize);
+    }
+
     fn get_r32(&mut self, modrm: &ModRM) -> u32 {
         self.get_register32(modrm.get_reg_index() as usize)
+    }
+
+    fn get_rm8(&mut self, modrm: &ModRM) -> u8 {
+        if modrm.mode == 3 {
+            self.get_register8(modrm.rm as usize)
+        } else {
+            let address = self.calc_memory_address(modrm);
+            self.get_memory8(address as usize) as u8
+        }
     }
 
     fn get_rm32(&mut self, modrm: &ModRM) -> u32 {
@@ -632,8 +704,21 @@ impl ModRMFunction for Emulator {
         }
     }
 
+    fn set_r8(&mut self, modrm: &ModRM, value: u8) {
+        self.set_register8(modrm.get_reg_index() as usize, value);
+    }
+
     fn set_r32(&mut self, modrm: &ModRM, value: u32) {
         self.set_register32(modrm.get_reg_index() as usize, value);
+    }
+
+    fn set_rm8(&mut self, modrm: &ModRM, value: u8) {
+        if modrm.mode == 3 {
+            self.set_register8(modrm.rm as usize, value);
+        } else {
+            let address = self.calc_memory_address(modrm);
+            self.set_memory8(address as usize, value as u32);
+        }
     }
 
     fn set_rm32(&mut self, modrm: &ModRM, value: u32) {

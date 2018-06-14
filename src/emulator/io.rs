@@ -18,7 +18,7 @@ pub trait Io {
     fn io_out8(address: u16, value: u8) {
         match address {
             0x03f8 => {
-                println!("{}", value as char);
+                print!("{}", value as char);
             }
             _ => {}
         }
